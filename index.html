@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>作品集 — 交互体系复刻自 perfolios. 的动效规格</title>
+<meta name="description" content="个人作品集站点。动效体系按原站实测规格实现：独立属性 500ms 过渡、squircle 圆角、FLIP 布局动画、150ms 色彩过渡。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,300..700;1,400&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   TOKENS（数值取自原站实测）
+   ============================================================ */
+:root{
+  color-scheme:light;
+  --bg:#fbfbfb; --fg:#707070; --strong:#000; --surface:#f2f2f2; --surface-2:#eee;
+  --faint:#a3a3a3; --disabled:#cfcfcf; --line:#e0e0e0; --highlight:#fff; --accent:#3232ff;
+  --raised:#fff;
+  --raised-shadow:0 .5px 0 #fff inset, 0 0 0 .5px #e0e0e0, 0 -.5px 0 #d0d0d0 inset, 0 2px 5px #00000010;
+  --lifted-shadow:0 0 0 .5px #00000014, 0 1px 0 #fff inset, 0 12px 32px -8px #00000030;
+  --ease-out-quint:cubic-bezier(.22,1,.36,1);
+  /* 近似 Framer 的 spring{duration:.35,bounce:.15}：末端轻微过冲再回正，比纯 ease-out 有弹性 */
+  --ease-spring:cubic-bezier(.34,1.42,.55,1);
+  --ease-std:cubic-bezier(.4,0,.2,1);
+  --ease-io-cubic:cubic-bezier(.645,.045,.355,1);
+  --ease-clip:cubic-bezier(.65,0,.35,1);
+}
+html.dark{
+  color-scheme:dark;
+  --bg:#0c0c0c; --fg:#8a8a8a; --strong:#f5f5f5; --surface:#161616; --surface-2:#1c1c1c;
+  --faint:#5c5c5c; --disabled:#333; --line:#1e1e1e; --highlight:#ffffff08; --accent:#8f8fff;
+  --raised:#232323;
+  --raised-shadow:0 .5px 0 #ffffff14 inset, 0 0 0 .5px #000, 0 2px 6px #00000080;
+  --lifted-shadow:0 0 0 .5px #ffffff14, 0 1px 0 #ffffff0d inset, 0 16px 40px -8px #000;
+}
+
+/* ============================================================ BASE */
+*{box-sizing:border-box;margin:0;padding:0}
+html{scrollbar-width:none;-ms-overflow-style:none}
+html::-webkit-scrollbar{display:none}
+body{
+  background:var(--bg);color:var(--fg);
+  font:16px/24px "Public Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+input,select{font:inherit}
+ul{list-style:none}
+svg{display:block}
+.sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.mono{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+@supports (corner-shape:squircle){ [data-squircle]{corner-shape:squircle} }
+/* 全站统一的 150ms 色彩过渡（原站有 272 处，这是"不跳变"的关键） */
+a,button,input,select,time,span,.nm,.bl{transition:color .15s var(--ease-std),background-color .15s var(--ease-std),border-color .15s var(--ease-std),box-shadow .15s var(--ease-std)}
+
+main{position:relative;min-height:100dvh;overflow-x:clip;padding:120px 0 80px}
+.col{width:100%;max-width:540px;margin-inline:auto;padding-inline:16px;display:flex;flex-direction:column}
+@media(max-width:640px){main{padding:96px 0 64px}}
+
+/* ============================================================ 主题开关 */
+.theme-nav{position:fixed;top:32px;left:50%;transform:translateX(-50%);z-index:60;display:flex;gap:2px;padding:3px;border-radius:999px;background:var(--surface)}
+@media(max-width:640px){.theme-nav{top:20px}}
+.theme-nav .ind{position:absolute;top:3px;left:3px;width:32px;height:32px;border-radius:999px;background:var(--raised);box-shadow:var(--raised-shadow);transition:transform .35s var(--ease-spring)}
+.theme-nav button{position:relative;display:grid;place-items:center;width:32px;height:32px;border-radius:999px;color:var(--faint);outline:none}
+.theme-nav button[aria-pressed="true"]{color:var(--strong)}
+.theme-nav button:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+
+/* ============================================================ HERO 扇形牌叠 */
+.deck{position:relative;height:190px;width:100%;margin-inline:auto;--scale:1}
+@media(max-width:640px){.deck{height:150px;--scale:.7}}
+.card{
+  position:absolute;top:50%;left:50%;display:block;width:210px;padding:5px;
+  background:var(--raised);border-radius:14px;box-shadow:var(--lifted-shadow);cursor:pointer;outline:none;
+  transform:translate(-50%,-50%) scale(var(--scale)) translate(var(--x,0px),var(--y,0px)) rotate(var(--rot,0deg));
+  /* 原站：四个独立属性各自过渡，这是丝滑感的来源之一 */
+  transition:transform .5s var(--ease-out-quint),translate .5s var(--ease-out-quint),
+             scale .5s var(--ease-out-quint),rotate .5s var(--ease-out-quint),
+             opacity .3s var(--ease-std),box-shadow .3s var(--ease-std);
+}
+/* 悬停时牌叠下方浮出被悬停那张的名字（原站用 AnimatePresence + spring，这里等效） */
+.deck-cap{position:absolute;left:0;right:0;bottom:-8px;height:20px;display:flex;justify-content:center;pointer-events:none;z-index:8}
+.deck-cap span{font:500 13px/20px "Public Sans",system-ui,sans-serif;color:var(--strong);white-space:nowrap;
+  opacity:0;translate:0 4px;filter:blur(4px);
+  transition:opacity .16s var(--ease-std),translate .35s var(--ease-out-quint),filter .2s var(--ease-std)}
+.deck-cap.on span{opacity:1;translate:0 0;filter:blur(0px)}
+@media(max-width:640px){.deck-cap{bottom:-20px}}
+.card .shot{display:block;width:100%;aspect-ratio:16/10;border-radius:10px;overflow:hidden;position:relative}
+.card .shot>*{position:absolute}
+.shot img,.thumb img,.hero-shot img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:top;border-radius:inherit}
+
+/* ============================================================ 文案 */
+.hi{font-size:15px;line-height:22.5px;font-weight:500;margin-top:80px}
+@media(max-width:640px){.hi{margin-top:56px}}
+h1{font-size:15px;line-height:22.5px;font-weight:500;max-width:48ch;text-wrap:pretty}
+h1 .nm{color:var(--strong)}
+h1 .mark{display:inline-block;height:26px;width:auto;margin-left:4px;margin-right:1.5px;vertical-align:-8px}
+.meta-row{margin-top:24px;font-size:15px;line-height:22.5px;display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;text-wrap:pretty}
+.count{color:var(--strong);font-weight:500}
+
+/* clip-path 黑色擦除填充（原站签名） */
+.wipe-btn{position:relative;overflow:hidden;border-radius:8px;background:var(--surface-2);padding:1px 8px 3px;font-size:13px;line-height:20px;color:var(--fg);outline:none}
+.wipe-btn:hover{color:var(--strong)}
+.wipe-btn .fill{position:absolute;inset:0;display:grid;place-items:center;padding-inline:8px;padding-bottom:1px;background:var(--strong);color:var(--bg);clip-path:inset(0 100% 0 0);transition:clip-path .3s var(--ease-clip)}
+.wipe-btn:hover .fill,.wipe-btn:focus-visible .fill{clip-path:inset(0 0 0 0)}
+.wipe-btn:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+@media(prefers-reduced-motion:reduce){.wipe-btn .fill{transition:none}}
+
+/* 合作过 */
+.clients{margin-top:8px;display:flex;flex-direction:column;gap:10px}
+.clients .head{display:flex;align-items:baseline;gap:8px;font-size:13px;color:var(--faint)}
+.clients .head .chip{border-radius:6px;background:var(--surface-2);padding:1px 6px;font-size:12px;color:var(--fg)}
+.clients ul{display:flex;flex-direction:column;gap:8px}
+.client{display:flex;width:-moz-fit-content;width:fit-content;align-items:center;gap:10px;margin-inline:-4px;border-radius:8px;padding:2px 4px;outline:none}
+.client:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.client .ico{display:grid;place-items:center;width:32px;height:32px;overflow:hidden;border-radius:7px;background:var(--raised);box-shadow:var(--raised-shadow)}
+.client .txt{font-size:13.5px}
+.client .txt b{color:var(--strong);font-weight:500}
+.client .arw{font-size:11px;color:var(--faint);transition:transform .2s var(--ease-out-quint),color .15s var(--ease-std)}
+.client:hover .txt{color:var(--strong)}
+.client:hover .arw{transform:translate(2px,-2px);color:var(--strong)}
+
+/* ============================================================ 控件条 */
+.bar{margin-top:40px;display:flex;flex-direction:column;gap:8px}
+.row1{display:flex;gap:8px}
+.search{position:relative;flex:1 1}
+.search .glass{position:absolute;top:50%;left:12px;transform:translateY(-50%);width:16px;height:16px;color:var(--faint);pointer-events:none}
+.search input{height:36px;width:100%;padding-inline:36px;border:0;border-radius:12px;background:var(--surface);font-size:14px;font-weight:500;color:var(--strong);outline:none;transition:box-shadow .15s var(--ease-std)}
+.search input::placeholder{color:var(--faint)}
+.search input:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.search input::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none}
+.search kbd{position:absolute;top:50%;right:8px;transform:translateY(-50%);display:grid;place-items:center;width:20px;height:20px;border-radius:6px;background:var(--raised);box-shadow:var(--raised-shadow);font:400 11px/1 "Geist Mono",monospace;color:var(--faint);pointer-events:none}
+@media(max-width:640px){.search kbd{display:none}}
+
+.seg{position:relative;display:flex;gap:2px;padding:3px;border-radius:12px;background:var(--surface)}
+.seg .ind{position:absolute;top:3px;left:3px;height:30px;border-radius:9px;background:var(--raised);box-shadow:var(--raised-shadow);transition:transform .34s var(--ease-out-quint),width .34s var(--ease-out-quint)}
+.seg button{position:relative;display:grid;place-items:center;height:30px;border-radius:9px;font-size:13px;font-weight:500;color:var(--faint);outline:none}
+.seg button:hover{color:var(--strong)}
+.seg button[aria-pressed="true"]{color:var(--strong)}
+.seg button:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.seg.icon button{width:30px}
+.seg.text{width:100%}
+.seg.text button{flex:1 1}
+.pills{gap:2px}
+.pills button{padding-inline:12px;flex:0 0 auto}
+.pill{position:relative}
+.pills button[data-tip]:hover::after{content:attr(data-tip);position:absolute;left:50%;bottom:calc(100% + 10px);transform:translateX(-50%);width:max-content;max-width:230px;padding:7px 9px;border-radius:8px;background:var(--raised);box-shadow:var(--lifted-shadow);color:var(--fg);font-size:12px;font-weight:400;line-height:1.45;z-index:50;pointer-events:none;animation:tipin .18s var(--ease-out-quint)}
+@keyframes tipin{from{opacity:0;transform:translate(-50%,4px) scale(.96)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
+
+/* ============================================================ 左侧竖排筛选栏
+   只在 ≥1024px 出现：同一个「类型」筛选，宽屏走左侧竖栏，窄屏走内容列里的横排控件，两者互换显示。 */
+.rail{position:fixed;top:50%;right:calc(50% + 270px + 40px);z-index:30;display:none}
+.rail-list{position:relative;display:flex;flex-direction:column;width:176px}
+.rail-list button{display:flex;align-items:center;height:32px;width:100%;padding-left:30px;padding-right:12px;border-radius:10px;
+  font-size:14px;font-weight:500;color:var(--faint);text-align:left;outline:none;transition:color .15s var(--ease-std)}
+.rail-list button:hover,.rail-list button[aria-pressed="true"]{color:var(--strong)}
+.rail-list button:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.rail-dot{position:absolute;top:0;left:0;width:7px;height:7px;border-radius:2px;background:var(--strong);pointer-events:none;
+  transform:translate(12px,12.5px);transition:transform .35s var(--ease-spring),opacity .2s var(--ease-std)}
+@media(min-width:1024px){
+  .rail{display:block;translate:0 -50%}
+  #kindSeg{display:none}
+}
+@media(min-width:1440px){.rail{right:calc(50% + 270px + 72px)}}
+
+.hidden{display:none}
+
+/* ============================================================ 作品列表 */
+.results{display:flex;flex-direction:column;width:100%;margin-top:40px;position:relative}
+.results.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px}
+.row{position:relative;display:flex;align-items:baseline;gap:12px;border-radius:12px;padding:8px;outline:none;font-size:15px;font-weight:500;line-height:22.5px;cursor:pointer;transition:opacity .2s var(--ease-std)}
+.results.list:hover .row{opacity:.45}
+.results .row:hover,.results .row:focus-visible{opacity:1!important}
+.row:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.row .body{min-width:0;flex:1 1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .nm{color:var(--strong)}
+.results .row:hover .nm{color:var(--accent)}
+.row .bl{margin-left:8px}
+.row .dt{width:48px;flex:none;text-align:right;font:400 12px/20px "Geist Mono",monospace;color:var(--faint);font-variant-numeric:tabular-nums}
+.row .thumb{display:none}
+/* 窄屏：单行省略会把简介整句吃掉，改成标题在上、简介在下 */
+@media(max-width:640px){
+  .row{align-items:flex-start;gap:10px;font-size:14.5px;line-height:21px}
+  .row .body{white-space:normal}
+  .row .bl{display:block;margin:1px 0 0;color:var(--faint);font-weight:400;font-size:13px;line-height:19.5px}
+  .results.grid .row .bl{display:none}
+}
+
+/* 网格 */
+.results.grid .row{display:block;padding:0;border-radius:0;font-weight:400}
+.results.grid .row .thumb{display:block;width:100%;aspect-ratio:16/10;padding:5px;border-radius:14px;background:var(--raised);box-shadow:var(--lifted-shadow);overflow:hidden}
+.results.grid .row .thumb span{display:block;width:100%;height:100%;border-radius:10px;overflow:hidden;position:relative;transition:scale .35s var(--ease-out-quint)}
+.results.grid .row:hover .thumb span{scale:1.03}
+.results.grid .row .thumb i{position:absolute;display:block;border-radius:2px}
+.results.grid .row .body{white-space:normal;padding:8px 2px 0;display:block}
+.results.grid .row .nm{font-size:13.5px;display:block}
+.results.grid .row .bl{display:none}
+.results.grid .row .dt{display:none}
+
+.empty{padding:56px 0 8px;text-align:center;font-size:14px;color:var(--faint)}
+.empty button{margin-top:12px;border-radius:999px;background:var(--surface);padding:7px 14px;font-size:13px;font-weight:500;color:var(--strong)}
+
+/* 随机看一个 */
+.tail{margin-top:44px;display:flex;justify-content:center}
+.surprise{position:relative;display:flex;align-items:center;height:40px;padding-inline:16px;border-radius:999px;font-size:14px;font-weight:500;color:var(--strong);outline:none}
+.surprise .ghost{visibility:hidden}
+.surprise .face{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:999px;background:var(--raised);box-shadow:var(--raised-shadow);transition:transform .34s var(--ease-out-quint),box-shadow .15s var(--ease-std)}
+.surprise:hover .face{transform:scale(1.045)}
+.surprise:active .face{transform:scale(.96)}
+.surprise:focus-visible .face{box-shadow:var(--raised-shadow),0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.surprise .sp{display:inline-block;transform-origin:20% 90%}
+.surprise.waving .sp{animation:sprout-wave .9s var(--ease-io-cubic)}
+@keyframes sprout-wave{
+  16%{color:#f3eebc;filter:blur(2px)}
+  34%{color:#dfe46a;filter:blur(1px)}
+  54%{color:#9fcb52;filter:blur(.3px)}
+  76%{color:#3f8c3c}
+}
+footer{margin-top:44px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;color:var(--faint)}
+footer a{color:var(--fg)}
+footer a:hover{color:var(--strong);text-decoration:underline;text-decoration-color:var(--strong)}
+footer .clock{font:400 13px/1 "Geist Mono",monospace;font-variant-numeric:tabular-nums}
+
+/* ============================================================ 入场（blur 对焦） */
+.reveal{opacity:0;filter:blur(20px)}
+.reveal.deep{filter:blur(30px)}
+
+/* ============================================================ 案例详情 */
+dialog{border:0;padding:0;background:transparent;width:min(560px,calc(100% - 32px));color:var(--fg)}
+dialog::backdrop{background:color-mix(in srgb,var(--bg) 55%,#000 45%);backdrop-filter:blur(6px)}
+.sheet{background:var(--raised);border-radius:20px;box-shadow:var(--lifted-shadow);padding:20px;position:relative}
+/* 弹窗开合：用离散过渡，关闭时不再「啪」地消失（原站的 Modal 是 Framer 驱动的开合，这里等效） */
+@supports (transition-behavior:allow-discrete){
+  dialog{opacity:1;translate:0 0;scale:1;
+    transition:opacity .28s var(--ease-std), translate .42s var(--ease-out-quint), scale .42s var(--ease-out-quint),
+               overlay .42s allow-discrete, display .42s allow-discrete;
+    transition-behavior:allow-discrete}
+  dialog[open]{opacity:1;translate:0 0;scale:1}
+  dialog:not([open]){opacity:0;translate:0 14px;scale:.97}
+  dialog::backdrop{opacity:1;transition:opacity .28s var(--ease-std), overlay .42s allow-discrete;transition-behavior:allow-discrete}
+  dialog:not([open])::backdrop{opacity:0}
+  @starting-style{ dialog[open]{opacity:0;translate:0 14px;scale:.97} }
+  @starting-style{ dialog[open]::backdrop{opacity:0} }
+  /* 走共享元素形变时，禁用外层缩放，避免双重动画 */
+  dialog.morph, dialog.morph[open]{scale:1;translate:0 0}
+}
+/* 详情内容依次对焦出现 */
+.sheet.in > *{animation:sheet-focus .5s var(--ease-out-quint) both}
+.sheet.in > *:nth-child(2){animation-delay:.04s}
+.sheet.in > *:nth-child(3){animation-delay:.08s}
+.sheet.in > *:nth-child(4){animation-delay:.12s}
+.sheet.in > *:nth-child(5){animation-delay:.16s}
+.sheet.in > *:nth-child(6){animation-delay:.20s}
+@keyframes sheet-focus{from{opacity:0;filter:blur(8px);translate:0 6px}to{opacity:1;filter:blur(0);translate:0 0}}
+.sheet .hero-shot{width:100%;aspect-ratio:16/9;border-radius:14px;overflow:hidden;position:relative;background:var(--surface)}
+.sheet .hero-shot i{position:absolute;display:block;border-radius:3px}
+.sheet h2{margin-top:16px;font-size:19px;line-height:26px;font-weight:600;color:var(--strong);letter-spacing:-.01em}
+.sheet .sub{margin-top:4px;font-size:13.5px;color:var(--fg)}
+.sheet .grid2{margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.sheet .cell{background:var(--surface);border-radius:12px;padding:10px 12px}
+.sheet .cell .k{font:500 11px/1 "Geist Mono",monospace;color:var(--faint);text-transform:uppercase;letter-spacing:.06em}
+.sheet .cell .v{margin-top:6px;font-size:13.5px;color:var(--strong);line-height:1.5}
+.sheet .cell .v b{font-weight:600}
+.sheet ul.out{margin-top:8px;display:flex;flex-direction:column;gap:7px}
+.sheet ul.out li{position:relative;padding-left:16px;font-size:13.5px;line-height:1.55}
+.sheet ul.out li::before{content:"";position:absolute;left:2px;top:8px;width:5px;height:5px;border-radius:50%;background:var(--accent)}
+.sheet .acts{margin-top:18px;display:flex;gap:8px;justify-content:flex-end}
+.btn{border-radius:999px;padding:8px 14px;font-size:13.5px;font-weight:500;outline:none}
+.btn.flat{background:var(--surface);color:var(--strong)}
+.btn.flat:hover{background:var(--surface-2)}
+.btn.raise{background:var(--raised);box-shadow:var(--raised-shadow);color:var(--strong)}
+.btn.raise:hover{box-shadow:var(--raised-shadow),0 0 0 2px color-mix(in srgb,var(--accent) 28%,transparent)}
+.btn:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 45%,transparent)}
+.sheet .x{position:absolute;top:12px;right:12px;display:grid;place-items:center;width:28px;height:28px;border-radius:999px;background:var(--surface);color:var(--faint)}
+.sheet .x:hover{color:var(--strong);background:var(--surface-2)}
+
+/* 表单弹窗 */
+.frm{margin-top:16px;display:grid;gap:10px}
+.fld{display:grid;gap:5px}
+.fld label{font-size:12px;color:var(--faint)}
+.fld input,.fld select{width:100%;padding:9px 12px;border:0;border-radius:12px;background:var(--surface);color:var(--strong);font-size:14px;font-weight:500;outline:none;transition:box-shadow .15s var(--ease-std)}
+.fld input:focus-visible,.fld select:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.tip{font-size:11.5px;color:var(--faint);line-height:1.5}
+
+/* 圆形扩散切换主题（View Transitions） */
+::view-transition-old(root){animation:none;z-index:0}
+::view-transition-new(root){animation:none;z-index:1}
+
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+  .reveal{opacity:1;filter:none}
+}
+</style>
+</head>
+<body>
+
+<nav class="theme-nav" aria-label="Theme">
+  <span class="ind" id="themeInd"></span>
+  <button data-set-theme="light" aria-label="Light theme" aria-pressed="true">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.4M12 19.1v2.4M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2.5 12h2.4M19.1 12h2.4M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7"/></svg>
+  </button>
+  <button data-set-theme="dark" aria-label="Dark theme" aria-pressed="false">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.47 7 7 0 1 0 9.473 9.47Z"/></svg>
+  </button>
+</nav>
+
+<main>
+  <div class="col">
+
+    <div class="deck reveal deep" id="deck" data-slot="0"><div class="deck-cap" id="deckCap" aria-hidden="true"><span></span></div></div>
+
+    <p class="hi reveal" data-slot="2">你好，</p>
+    <h1 class="reveal" data-slot="3">我是
+      <svg class="mark" viewBox="0 0 44 34" role="img" aria-label="标志">
+        <circle cx="17" cy="17" r="14" fill="var(--strong)"/>
+        <path d="M10.5 13h13M10.5 17h13M10.5 21h8.5" stroke="var(--bg)" stroke-width="2.4" stroke-linecap="round"/>
+        <circle cx="38" cy="17" r="3.4" fill="var(--accent)"/>
+      </svg><span class="nm" id="whoami">陈澄</span>，做内容与视觉设计，把复杂的产品讲成人看得懂的样子。</h1>
+    <p class="meta-row reveal" data-slot="4">
+      <span><span class="count mono" id="countHero">0</span> 个作品，还在做。想细看某一个？</span>
+      <button class="wipe-btn" id="openCase">点它<span class="fill" aria-hidden="true">点它</span></button>
+      <span>或</span>
+      <button class="wipe-btn" id="openHire">聊聊合作<span class="fill" aria-hidden="true">聊聊合作</span></button>
+    </p>
+
+    <div class="clients reveal" data-slot="4.75">
+      <p class="head">合作过<span class="chip mono" id="clientCount">0</span></p>
+      <ul id="clientList"></ul>
+    </div>
+
+    <div class="bar">
+      <div class="row1">
+        <label class="search">
+          <span class="sr">搜索作品</span>
+          <svg class="glass" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg>
+          <input type="search" id="q" placeholder="搜索作品" autocomplete="off">
+          <kbd>/</kbd>
+        </label>
+        <div class="seg icon" id="viewSeg" role="group" aria-label="视图">
+          <span class="ind"></span>
+          <button data-view="list" aria-label="List view" aria-pressed="true"><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><rect x="2" y="3" width="12" height="1.75" rx=".875"/><rect x="2" y="7.125" width="12" height="1.75" rx=".875"/><rect x="2" y="11.25" width="12" height="1.75" rx=".875"/></svg></button>
+          <button data-view="grid" aria-label="Grid view" aria-pressed="false"><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><rect x="2" y="2" width="5.25" height="5.25" rx="1.5"/><rect x="8.75" y="2" width="5.25" height="5.25" rx="1.5"/><rect x="2" y="8.75" width="5.25" height="5.25" rx="1.5"/><rect x="8.75" y="8.75" width="5.25" height="5.25" rx="1.5"/></svg></button>
+        </div>
+      </div>
+      <div class="seg text" id="kindSeg" role="group" aria-label="类型"><span class="ind"></span></div>
+      <div class="seg pills" id="scenePills" role="group" aria-label="场景"><span class="ind"></span></div>
+    </div>
+
+    <div class="list results" id="results"></div>
+    <div class="empty hidden" id="empty">没有匹配的作品。<br><button id="clearAll">清空筛选</button></div>
+
+    <div class="tail">
+      <button class="surprise" id="surprise">
+        <span class="ghost">随机看一个</span>
+        <span class="face"><span class="sp">🌱</span>随机看一个</span>
+      </button>
+    </div>
+
+    <footer>
+      <span>© <span id="whoami2">陈澄</span> · <a href="#" id="mailto">写信给我</a></span>
+      <span class="clock" id="clock">--:--:--</span>
+    </footer>
+  </div>
+</main>
+
+<nav class="rail" aria-label="筛选作品">
+  <div class="rail-list" id="kindRail" role="group" aria-label="类型"><span class="rail-dot" aria-hidden="true"></span></div>
+</nav>
+
+<dialog id="caseDlg">
+  <div class="sheet">
+    <button class="x" id="caseClose" aria-label="关闭">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l10 10M13 3 3 13"/></svg>
+    </button>
+    <div class="hero-shot" id="caseShot"></div>
+    <h2 id="caseTitle"></h2>
+    <p class="sub" id="caseSub"></p>
+    <div class="grid2">
+      <div class="cell"><div class="k">我的角色</div><div class="v" id="caseRole"></div></div>
+      <div class="cell"><div class="k">交付物</div><div class="v" id="caseDeliver"></div></div>
+    </div>
+    <div class="cell" style="margin-top:12px"><div class="k">结果</div><ul class="out" id="caseOut"></ul></div>
+    <div class="acts"><button class="btn flat" data-close>关闭</button><button class="btn raise" id="caseLink">查看线上 ↗</button></div>
+  </div>
+</dialog>
+
+<dialog id="hireDlg">
+  <div class="sheet">
+    <button class="x" id="hireClose" aria-label="关闭">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l10 10M13 3 3 13"/></svg>
+    </button>
+    <h2>聊聊合作</h2>
+    <p class="sub">说一下项目背景、时间和你想要的产出，48 小时内回你。</p>
+    <form class="frm" id="hireForm">
+      <div class="fld"><label for="h-name">称呼</label><input id="h-name" required placeholder="怎么称呼你"></div>
+      <div class="fld"><label for="h-kind">类型</label><select id="h-kind"><option>图文内容</option><option>视觉设计</option><option>产品官网</option><option>发布物料</option><option>其他</option></select></div>
+      <div class="fld"><label for="h-when">期望时间</label><input id="h-when" placeholder="例如 11 月上旬"></div>
+      <div class="fld"><label for="h-note">项目背景</label><input id="h-note" placeholder="产品是什么、想达成什么"></div>
+      <p class="tip">提交会打开你的邮件客户端，信息不会存在这个页面上。</p>
+      <div class="acts"><button type="button" class="btn flat" data-close>取消</button><button type="submit" class="btn raise">生成邮件</button></div>
+    </form>
+  </div>
+</dialog>
+
+<script>
+/* ============================================================
+   配置
+   ============================================================ */
+const CFG = {
+  person: "陈澄",                 // ← 改成你的名字
+  contact: "hello@example.com",   // ← 改成你的邮箱
+  kinds: [
+    {k:"all", n:"全部"},
+    {k:"visual", n:"视觉", tip:"图文、版式、海报与品牌物料。"},
+    {k:"content", n:"内容", tip:"选题、脚本与长文的策划与撰写。"},
+    {k:"product", n:"产品", tip:"官网、落地页与界面。"},
+    {k:"lab", n:"实验", tip:"自己写的小工具与动效试验。"}
+  ],
+  scenes: [
+    {k:"all", n:"全部场景"},
+    {k:"xhs", n:"小红书", tip:"图文轮播与账号内容。"},
+    {k:"mp", n:"公众号", tip:"长文与专栏。"},
+    {k:"web", n:"官网", tip:"产品站与落地页。"},
+    {k:"launch", n:"发布会", tip:"演讲物料与演示。"},
+    {k:"oss", n:"开源", tip:"文档、README 与社区素材。"}
+  ],
+  clients: [
+    {name:"某技术团队", rest:"长期内容合作", url:"https://example.com"},
+    {name:"某组件库", rest:"产品发布物料", url:"https://example.com"},
+    {name:"某 AI 产品", rest:"官方账号图文", url:"https://example.com"}
+  ]
+};
+
+/* ============================================================
+   作品数据 —— 全部为占位示例，替换成你自己的
+   ============================================================ */
+const WORKS = [
+  {slug:"w01", title:"产品发布轮播", kind:"visual", scene:"xhs", year:"2026", hue:212, v:0,
+   blurb:"把一个开发工具拆成 9 页图文，讲清楚它解决什么。",
+   role:"选题 · 文案 · 版式", deliver:"9 页轮播图 + 3 条短视频脚本",
+   out:["单篇互动量做到账号近半年最高","评论区出现真实使用提问，不再是「收藏了」","版式模板被复用到现在 14 篇内容"]},
+  {slug:"w02", title:"组件库定位改写", kind:"content", scene:"mp", year:"2026", hue:268, v:3,
+   blurb:"把它从「React 组件库」改成「界面库」，跳出框架之争的受众。",
+   role:"访谈 · 定位 · 撰稿", deliver:"定位文档 + 4 篇长文",
+   out:["读者从单一框架扩展到全栈与设计岗","官网跳出率下降明显","被两个非 React 团队主动来问适配"]},
+  {slug:"w03", title:"官网首屏重构", kind:"product", scene:"web", year:"2026", hue:26, v:2,
+   blurb:"删掉三段自夸文案，首屏只放一个能点的东西。",
+   role:"信息架构 · 文案 · 走查", deliver:"首页改版 + 组件规范",
+   out:["首屏到试用注册的转化翻倍","移动端跳出减少","改版过程写成一篇复盘，自己带来了客户"]},
+  {slug:"w04", title:"1080×1440 出图管线", kind:"lab", scene:"oss", year:"2025", hue:150, v:1,
+   blurb:"用代码批量渲染社媒轮播图，改文案就出图。",
+   role:"设计系统 · 自动化", deliver:"渲染脚本 + 12 套版式",
+   out:["单篇出图从 40 分钟压到 5 分钟","版式一致性不再靠手感","同事不用会设计也能发图"]},
+  {slug:"w05", title:"发布演讲物料", kind:"visual", scene:"launch", year:"2025", hue:330, v:2,
+   blurb:"20 页 Keynote 加一版可独立转发的长图。",
+   role:"叙事结构 · 视觉", deliver:"演讲deck + 长图 + 现场易拉宝",
+   out:["现场提问时长超议程","长图被同行自发转发到群里","结束后收到 6 个合作询问"]},
+  {slug:"w06", title:"教程系列拆条", kind:"content", scene:"xhs", year:"2025", hue:44, v:0,
+   blurb:"把一份 90 页文档拆成 18 条能独立看懂的图文。",
+   role:"信息拆解 · 撰稿", deliver:"18 条内容 + 索引表",
+   out:["支持群里的重复问题减少","单条最高收藏数超过官方账号历史值","文档本身因这些条目被重新打开"]},
+  {slug:"w07", title:"动效规格表", kind:"lab", scene:"web", year:"2025", hue:190, v:3,
+   blurb:"把「丝滑」写成可执行参数：时长、曲线、属性分层。",
+   role:"调研 · 规范", deliver:"动效 token 表 + 示例页",
+   out:["设计评审不再靠形容词","前后端实现一次对齐","复用到了三个页面"]},
+  {slug:"w08", title:"账号视觉体系", kind:"visual", scene:"xhs", year:"2024", hue:96, v:1,
+   blurb:"封面统一到一个网格系统上，信息密度提上去，留白减下来。",
+   role:"版式系统 · 规范", deliver:"封面模板 8 套 + 使用规则",
+   out:["主页首屏整齐度肉眼可辨","粉丝增长最快的一段时期","被两个同类账号照着做"]},
+  {slug:"w09", title:"开源 README 重写", kind:"content", scene:"oss", year:"2024", hue:238, v:0,
+   blurb:"第一屏回答「它是什么、给我什么、三行怎么用」。",
+   role:"技术写作", deliver:"README + 快速开始页",
+   out:["Star 增速比上一版快","Issue 里「怎么装」类问题几乎消失","被收录进两个第三方清单"]},
+  {slug:"w10", title:"落地页文案实验", kind:"product", scene:"web", year:"2024", hue:352, v:2,
+   blurb:"同一产品三版卖点顺序，投给不同渠道看点击后行为。",
+   role:"文案 · A/B 设计", deliver:"3 版页面 + 数据看板",
+   out:["胜出版本转化高出约四成","否掉了内部争论三个月的口号","方法论沉淀成一份写作清单"]},
+  {slug:"w11", title:"交互复刻研究", kind:"lab", scene:"web", year:"2026", hue:186, v:1,
+   blurb:"把别人的网站拆成实测参数，再逐条重建验证。",
+   role:"逆向 · 实现", deliver:"复刻页 + 参数记录",
+   out:["拿到一套可复用的动效 token","确认了「丝滑」主要来自独立属性过渡","方法可迁移到任何参考站"]},
+  {slug:"w12", title:"产品对比长图", kind:"visual", scene:"mp", year:"2024", hue:56, v:3,
+   blurb:"把六个竞品放在同一坐标系里，一张图看完。",
+   role:"调研 · 可视化", deliver:"长图 + 数据来源附录",
+   out:["成为搜索进来的稳定流量页","销售直接拿去给客户讲","两个竞品据此改了功能描述"]},
+  {slug:"w13", title:"内容日历系统", kind:"content", scene:"xhs", year:"2024", hue:120, v:0,
+   blurb:"用选题池加节奏表替代「今天发什么」的临时决定。",
+   role:"流程设计", deliver:"选题库 + 周排期表",
+   out:["断更次数降到零","每篇留出改图时间","复用到另一个账号"]},
+  {slug:"w14", title:"界面密度规范", kind:"product", scene:"web", year:"2026", hue:290, v:2,
+   blurb:"定义什么叫「信息足但不挤」：行高、栏宽、断点三档。",
+   role:"规范制定", deliver:"密度规范 + 组件示例",
+   out:["改版不再逐页吵","移动端可读性问题减少","新人做页面一次通过"]},
+  {slug:"w15", title:"演示脚本模板", kind:"lab", scene:"launch", year:"2025", hue:18, v:1,
+   blurb:"产品演示做成可填空的脚本，换产品不用重想结构。",
+   role:"结构化 · 撰稿", deliver:"脚本模板 + 3 份实例",
+   out:["演示准备时间砍一半","现场翻车时有兜底段落","被两个团队拿去用"]},
+  {slug:"w16", title:"个人站改版", kind:"visual", scene:"web", year:"2026", hue:175, v:3,
+   blurb:"这个页面本身：单栏、扇形首屏、悬停聚焦列表。",
+   role:"设计 · 实现", deliver:"本站 + 动效说明",
+   out:["作品以列表形式一次看全","移动端保持同一套交互","本身就是第 16 件作品"]}
+];
+
+/* ============================================================
+   缩略图：有 d.img 就用真图（把图片放进同级的 img/ 目录，WORKS 里写 img:"img/xxx.jpg"），
+   没有就退回 CSS 画的假网页，4 种版式。
+   ============================================================ */
+function shotHTML(d, big){
+  if (d.img) return `<img src="${d.img}" alt="" loading="lazy" decoding="async" style="display:block;width:100%;height:100%;object-fit:cover;object-position:top">`;
+  const h = d.hue, h2 = (h+42)%360;
+  const bg = `hsl(${h} 8% 92%)`, ink = `hsl(${h} 28% 22%)`, pop = `hsl(${h2} 68% 52%)`, pop2 = `hsl(${h} 55% 60%)`;
+  const V = [
+    `<i style="left:8%;top:14%;width:44%;height:11%;background:${ink}"></i>
+     <i style="left:8%;top:29%;width:30%;height:6%;background:${ink};opacity:.45"></i>
+     <i style="left:8%;top:46%;width:38%;height:34%;background:${pop}"></i>
+     <i style="left:52%;top:46%;width:40%;height:34%;background:${ink};opacity:.2"></i>`,
+    `<i style="left:6%;top:8%;width:88%;height:54%;background:${pop}"></i>
+     <i style="left:6%;top:68%;width:52%;height:9%;background:${ink}"></i>
+     <i style="left:6%;top:81%;width:34%;height:6%;background:${ink};opacity:.4"></i>`,
+    `<i style="left:6%;top:10%;width:26%;height:5%;background:${ink}"></i>
+     <i style="left:6%;top:22%;width:42%;height:32%;background:${ink};opacity:.22"></i>
+     <i style="left:52%;top:22%;width:42%;height:32%;background:${pop}"></i>
+     <i style="left:6%;top:58%;width:42%;height:32%;background:${pop2}"></i>
+     <i style="left:52%;top:58%;width:42%;height:32%;background:${ink};opacity:.22"></i>`,
+    `<i style="left:10%;top:12%;width:54%;height:8%;background:${ink}"></i>
+     <i style="left:10%;top:28%;width:80%;height:3.5%;background:${ink};opacity:.32"></i>
+     <i style="left:10%;top:35%;width:74%;height:3.5%;background:${ink};opacity:.32"></i>
+     <i style="left:10%;top:42%;width:78%;height:3.5%;background:${ink};opacity:.32"></i>
+     <i style="left:10%;top:52%;width:80%;height:30%;background:${pop};opacity:.85"></i>`
+  ];
+  return `<i style="position:absolute;inset:0;background:${bg}"></i>` + V[d.v]
+    + `<i style="position:absolute;left:0;top:0;width:100%;height:10%;background:${ink};opacity:.14"></i>`;
+}
+
+/* ============================================================ 动效工具 */
+const reduced = matchMedia("(prefers-reduced-motion:reduce)").matches;
+const Q = cubic => cubic ? "cubic-bezier(.22,1,.36,1)" : "cubic-bezier(.4,0,.2,1)";
+function anim(el, frames, opts){ if(reduced || !el?.animate) return null; return el.animate(frames, {easing:Q(true), fill:"both", ...opts}); }
+
+/* FLIP：按 key 记录位置 → DOM 变更后从旧位置滑回新位置 */
+function snapshot(){
+  const m = new Map();
+  document.querySelectorAll("#results [data-slug]").forEach(el => m.set(el.dataset.slug, el.getBoundingClientRect()));
+  return m;
+}
+function playFlip(prev, dur = 520){
+  if (reduced) return;
+  const nodes = [...document.querySelectorAll("#results [data-slug]")];
+  let entered = 0;
+  nodes.forEach(el => {
+    const p = prev.get(el.dataset.slug), n = el.getBoundingClientRect();
+    if (!p){
+      const d = Math.min(entered++, 12) * 26;
+      el.animate([{opacity:0, filter:"blur(6px)", translate:"0 8px"},{opacity:1, filter:"blur(0)", translate:"0 0"}],
+        {duration:340, delay:d, easing:Q(true), fill:"backwards"});
+      return;
+    }
+    const dx = p.left - n.left, dy = p.top - n.top;
+    if (Math.abs(dx) < .6 && Math.abs(dy) < .6) return;
+    el.animate([{transform:`translate(${dx}px, ${dy}px)`},{transform:"none"}], {duration:dur, easing:Q(true), fill:"both"});
+  });
+}
+/* 视图切换：先变更 DOM，再补动画（绝不把状态变更挂在动画回调上）
+   位移小 → 纯 FLIP 平移；尺寸剧变（列表↔网格）→ 平移 + 模糊交叉淡入，不做非等比缩放以免拉丝 */
+function switchView(mutate){
+  const prev = snapshot();
+  const oldNodes = [...results.children];
+  mutate();
+  if (reduced) return;
+  [...results.children].forEach((c, i) => {
+    const p = prev.get(c.dataset.slug), n = c.getBoundingClientRect();
+    if (!p){ c.animate([{opacity:0, filter:"blur(6px)"},{opacity:1, filter:"blur(0)"}], {duration:300, easing:Q(false), fill:"backwards"}); return; }
+    const dx = p.left - n.left, dy = p.top - n.top;
+    const morph = Math.abs(p.width - n.width) > 24 || Math.abs(p.height - n.height) > 12;
+    const moved = Math.abs(dx) > .6 || Math.abs(dy) > .6;
+    if (!moved && !morph) return;
+    const frames = morph
+      ? [{transform:`translate(${dx}px, ${dy}px)`, opacity:.25, filter:"blur(4px)"},{transform:"none", opacity:1, filter:"blur(0)"}]
+      : [{transform:`translate(${dx}px, ${dy}px)`},{transform:"none"}];
+    c.animate(frames, {duration: morph ? 480 : 420, delay: morph ? Math.min(i,10) * 14 : 0, easing:Q(true), fill:"backwards"});
+  });
+  // 离场条目：淡出后由 mutate 移除，这里只做视觉收尾
+  oldNodes.forEach(el => { if (!el.isConnected) el.animate([{opacity:1},{opacity:0, filter:"blur(3px)"}], {duration:200, easing:Q(false)}); });
+}
+
+/* ============================================================ 牌叠
+   这次是把原站 ShotCollage 的源码扒出来照抄的（chunk 1-8_ogimisn8i.js），不是猜的：
+   const l=[{x:-150,r:-9},{x:-75,r:-4.5},{x:0,r:0},{x:75,r:4.5},{x:150,r:9}], u=2;
+   悬停中间那张 → 整个扇形按 1.18 倍张开；
+   悬停其它张   → 它留在原位、回正、抬起 16px，其余全部叠到它背后，间距 22px；
+   指针离开容器 → 回到静态扇形。下方同时浮出这张卡的名字。
+   上一轮我在隐藏标签页里用合成事件测，pointerType 不是 "mouse" 被原站的守卫挡掉了，
+   所以我误判成「完全没有交互」——那是我测法的问题，不是它没有。 */
+const FANX = [-150,-75,0,75,150];
+const FANR = [-9,-4.5,0,4.5,9];
+const MID = 2;
+const deck = document.getElementById("deck");
+const deckCap = document.getElementById("deckCap").querySelector("span");
+const featured = WORKS.slice(0, 5);
+let hovered = null;
+
+function slotX(e, t){
+  const r = FANX[e];
+  if (t === null) return r;
+  if (t === MID) return r * 1.18;
+  const n = Math.sign(MID - t);
+  const i = (e - t) * n;
+  if (i < 0) return r - 20 * n;
+  if (i === 0) return FANX[t];
+  return FANX[t] + n * (218 + (i - 1) * 22);
+}
+function slotZ(e){ return e === MID ? 3 : Math.abs(e - MID) === 1 ? 2 : 1; }
+
+function applyFan(prev){
+  [...deck.querySelectorAll(".card")].forEach((a, e) => {
+    const on = hovered === e;
+    a.style.setProperty("--x", slotX(e, hovered).toFixed(2) + "px");
+    a.style.setProperty("--y", on ? "-16px" : "0px");
+    a.style.setProperty("--rot", (on ? 0 : FANR[e]) + "deg");
+    a.style.zIndex = slotZ(e);
+  });
+  if (hovered === null){ deckCap.parentElement.classList.remove("on"); return; }
+  const cap = deckCap.parentElement;
+  const swap = prev !== null && prev !== hovered;
+  deckCap.textContent = featured[hovered].title;
+  cap.classList.add("on");
+  if (swap && !reduced) deckCap.animate(
+    [{opacity:0, filter:"blur(4px)", translate:"0 4px"},{opacity:1, filter:"blur(0px)", translate:"0 0"}],
+    {duration:280, easing:Q(true), fill:"backwards"});
+}
+function setHovered(i){ if (hovered === i) return; const prev = hovered; hovered = i; applyFan(prev); }
+
+function buildDeck(){
+  deck.querySelectorAll(".card").forEach(c => c.remove());
+  FANX.forEach((_, i) => {
+    const d = featured[i];
+    const a = document.createElement("a");
+    a.className = "card"; a.href = "#"; a.dataset.i = i;
+    a.setAttribute("data-squircle",""); a.style.setProperty("--r","14px");
+    a.setAttribute("aria-label", d.title);
+    a.innerHTML = `<span class="shot" data-squircle style="--r:10px">${shotHTML(d)}</span>`;
+    a.addEventListener("click", e => { e.preventDefault(); openCase(d, a); });
+    deck.insertBefore(a, deckCap.parentElement);
+  });
+  applyFan(null);
+}
+/* 只有真鼠标会触发（原站同样只认 pointerType === "mouse"），触屏靠 tap 打开案例 */
+deck.addEventListener("pointerover", e => { if (e.pointerType !== "mouse") return; const a = e.target.closest(".card"); if (a) setHovered(+a.dataset.i); });
+deck.addEventListener("pointerleave", () => setHovered(null));
+deck.addEventListener("focusin", e => { const a = e.target.closest(".card"); if (a) setHovered(+a.dataset.i); });
+deck.addEventListener("focusout", () => setHovered(null));
+/* 键盘：左右在扇形里移动焦点，焦点会驱动同一套堆叠 */
+deck.addEventListener("keydown", e => {
+  const cards = [...deck.querySelectorAll(".card")];
+  const i = cards.indexOf(document.activeElement);
+  if (i < 0) return;
+  const nx = e.key === "ArrowRight" ? Math.min(i+1, cards.length-1) : e.key === "ArrowLeft" ? Math.max(i-1, 0) : -1;
+  if (nx >= 0 && nx !== i){ e.preventDefault(); cards[nx].focus(); }
+});
+
+/* ============================================================ 分段控件 */
+const state = { q:"", kind:"all", scene:"all", view:"list" };
+const $ = s => document.querySelector(s);
+const nameOf = (arr,k) => (arr.find(x=>x.k===k)||{}).n || k;
+
+function buildSeg(box, items, key){
+  box.dataset.key = key;
+  items.forEach(it => {
+    const b = document.createElement("button");
+    b.innerHTML = `<span class="lb">${it.n}</span>`; b.dataset.k = it.k;
+    b.setAttribute("aria-pressed", String(state[key] === it.k));
+    if (it.tip){ b.setAttribute("data-tip", it.tip); b.title = it.tip; }
+    b.onclick = () => { if (state[key] === it.k) return; state[key] = it.k; syncKey(key); renderWithFlip(); };
+    box.appendChild(b);
+  });
+}
+/* 同一个 key 可能有两份控件（窄屏横排 + 宽屏左栏），必须一起同步 */
+function syncKey(key){
+  document.querySelectorAll(`[data-key="${key}"]`).forEach(g => {
+    g.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(state[key] === b.dataset.k)));
+    moveInd(g);
+  });
+  if (key === "kind") moveRailDot();
+}
+function syncSeg(box, key){ syncKey(key); }
+function moveInd(box){
+  const ind = box.querySelector(".ind"), act = box.querySelector('[aria-pressed="true"]');
+  if (!ind || !act || !act.offsetWidth) return;
+  ind.style.width = act.offsetWidth + "px";
+  ind.style.transform = `translateX(${act.offsetLeft - 3}px)`;
+}
+/* 左栏那枚跟着选中项滑动的小圆点：横向贴在标签文字后面，纵向按行距 32px 落位 */
+function moveRailDot(){
+  const list = document.getElementById("kindRail");
+  const dot = list.querySelector(".rail-dot"), act = list.querySelector('[aria-pressed="true"]');
+  if (!dot || !act) return;
+  const idx = [...list.querySelectorAll("button")].indexOf(act);
+  dot.style.opacity = "1";
+  dot.style.transform = `translate(12px, ${idx * 32 + 12.5}px)`;
+}
+
+/* ============================================================ 渲染 */
+const results = document.getElementById("results");
+function filtered(){
+  const q = state.q.trim().toLowerCase();
+  return WORKS.filter(d =>
+    (state.kind === "all" || d.kind === state.kind) &&
+    (state.scene === "all" || d.scene === state.scene) &&
+    (!q || (d.title + " " + d.blurb + " " + nameOf(CFG.kinds,d.kind) + " " + nameOf(CFG.scenes,d.scene)).toLowerCase().includes(q))
+  );
+}
+function rowEl(d){
+  const el = document.createElement("div");
+  el.className = "row"; el.dataset.slug = d.slug; el.tabIndex = 0; el.setAttribute("role","button");
+  if (state.view === "list"){
+    el.innerHTML = `<span class="body"><span class="nm">${d.title}</span><span class="bl">${d.blurb}</span></span><time class="dt mono">${d.year}</time>`;
+  } else {
+    el.innerHTML = `<span class="thumb" data-squircle style="--r:14px"><span data-squircle style="--r:10px;position:relative">${shotHTML(d)}</span></span>
+      <span class="body"><span class="nm">${d.title}</span></span>`;
+  }
+  el.addEventListener("click", () => openCase(d, el));
+  el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openCase(d, el); } });
+  return el;
+}
+function renderFiltered(){
+  const list = filtered();
+  results.innerHTML = "";
+  list.forEach(d => results.appendChild(rowEl(d)));
+  document.getElementById("empty").classList.toggle("hidden", list.length > 0);
+  document.getElementById("countHero").textContent = WORKS.length;
+}
+function renderWithFlip(){ const prev = snapshot(); renderFiltered(); playFlip(prev); }
+
+/* 逐条错峰入场（IntersectionObserver） */
+let io;
+function observeRows(){
+  if (reduced) return;
+  io?.disconnect();
+  io = new IntersectionObserver(es => es.forEach((e,i) => {
+    if (!e.isIntersecting) return;
+    e.target.animate([{opacity:0, transform:"translateY(10px)", filter:"blur(5px)"},{opacity:1, transform:"none", filter:"blur(0)"}],
+      {duration:600, delay: Math.min(i,6) * 40, easing:Q(true), fill:"backwards"});
+    io.unobserve(e.target);
+  }), {rootMargin:"0px 0px -8% 0px", threshold:.1});
+  results.querySelectorAll(".row").forEach(r => io.observe(r));
+}
+
+/* ============================================================ 案例详情（共享元素式开场） */
+const caseDlg = document.getElementById("caseDlg");
+const caseSheet = caseDlg.querySelector(".sheet");
+let caseAnim = null;
+function openCase(d, fromEl){
+  if (caseAnim){ try { caseAnim.cancel(); } catch(_){} caseAnim = null; }
+  document.getElementById("caseShot").innerHTML = shotHTML(d);
+  document.getElementById("caseTitle").textContent = d.title;
+  document.getElementById("caseSub").textContent = d.blurb;
+  document.getElementById("caseRole").textContent = d.role;
+  document.getElementById("caseDeliver").textContent = d.deliver;
+  document.getElementById("caseOut").innerHTML = d.out.map(o => `<li>${o}</li>`).join("");
+  document.getElementById("caseLink").onclick = () => window.open(d.url || "https://example.com", "_blank", "noopener");
+  caseDlg.classList.remove("morph");
+  caseSheet.classList.remove("in");
+  caseDlg.showModal();
+  if (reduced){ return; }
+  /* 内容依次对焦；有来源元素时改走共享元素形变 */
+  if (fromEl){
+    const r = fromEl.getBoundingClientRect(), sr = caseSheet.getBoundingClientRect();
+    if (sr.width < 2 || r.width < 2) { caseSheet.classList.add("in"); return; }
+    caseDlg.classList.add("morph");
+    caseSheet.classList.remove("in");
+    caseSheet.style.transformOrigin = "center top";
+    if (caseAnim) { try { caseAnim.cancel(); } catch(_){} }
+    caseAnim = anim(caseSheet, [
+      {transform:`translate(${r.left + r.width/2 - (sr.left + sr.width/2)}px, ${r.top + r.height/2 - (sr.top + sr.height/2)}px) scale(${Math.max(r.width/sr.width,.28)}, ${Math.max(r.height/sr.height,.1)})`, opacity:.35, filter:"blur(3px)", borderRadius:"14px"},
+      {transform:"none", opacity:1, filter:"blur(0px)", borderRadius:"20px"}
+    ], {duration:460, easing:Q(true), fill:"none"});
+    /* 形变结束后再让正文对焦，读起来才有层次感 */
+    if (caseAnim) caseAnim.finished.then(() => caseSheet.classList.add("in")).catch(()=>{});
+    setTimeout(() => caseSheet.classList.add("in"), 620);
+  } else {
+    caseSheet.classList.add("in");
+  }
+}
+document.getElementById("caseClose").onclick = () => caseDlg.close();
+caseDlg.addEventListener("click", e => { if (e.target === caseDlg) caseDlg.close(); });
+caseDlg.addEventListener("cancel", e => e.preventDefault());
+caseDlg.addEventListener("close", () => { if (caseAnim){ try{caseAnim.cancel();}catch(_){} caseAnim=null; } caseDlg.classList.remove("morph"); caseSheet.classList.remove("in"); caseSheet.style.transformOrigin=""; });
+
+/* ============================================================ 合作弹窗 */
+const hireDlg = document.getElementById("hireDlg");
+const hireSheet = hireDlg.querySelector(".sheet");
+document.getElementById("openHire").onclick = () => { hireSheet.classList.remove("in"); hireDlg.showModal(); const on = () => hireSheet.classList.add("in"); if (!reduced) { requestAnimationFrame(on); setTimeout(on, 90); } else on(); };
+document.getElementById("openCase").onclick = () => { const pool = filtered(); if (!pool.length) return; openCase(pool[0], results.querySelector(".row, .card")); };
+document.getElementById("hireClose").onclick = () => hireDlg.close();
+hireDlg.addEventListener("click", e => { if (e.target === hireDlg) hireDlg.close(); });
+hireDlg.addEventListener("close", () => hireSheet.classList.remove("in"));
+document.getElementById("hireForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const g = id => document.getElementById(id).value;
+  const body = `称呼：${g("h-name")}\n类型：${g("h-kind")}\n期望时间：${g("h-when") || "未填"}\n项目背景：${g("h-note")}`;
+  location.href = `mailto:${CFG.contact}?subject=${encodeURIComponent("合作咨询 · "+g("h-kind"))}&body=${encodeURIComponent(body)}`;
+  hireDlg.close();
+});
+document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => b.closest("dialog").close());
+document.addEventListener("keydown", e => {
+  if (e.key === "/" && document.activeElement !== $("#q")){ e.preventDefault(); $("#q").focus(); }
+  if (e.key === "Escape"){ caseDlg.open && caseDlg.close(); hireDlg.open && hireDlg.close(); }
+});
+
+/* ============================================================ 其他交互 */
+$("#q").addEventListener("input", e => { state.q = e.target.value; renderWithFlip(); });
+document.querySelectorAll("#viewSeg [data-view]").forEach(b => b.onclick = () => {
+  if (state.view === b.dataset.view) return;
+  state.view = b.dataset.view;
+  document.querySelectorAll("#viewSeg [data-view]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  moveInd($("#viewSeg"));
+  switchView(() => { results.className = "results " + state.view; renderFiltered(); });
+});
+$("#surprise").addEventListener("click", e => {
+  const pool = filtered().length ? filtered() : WORKS;
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  const btn = e.currentTarget; btn.classList.add("waving");
+  setTimeout(() => { btn.classList.remove("waving"); openCase(pick, results.querySelector(".row")); }, reduced ? 0 : 520);
+});
+$("#clearAll").onclick = () => {
+  state.q = ""; state.kind = "all"; state.scene = "all"; $("#q").value = "";
+  syncSeg($("#kindSeg"),"kind"); syncSeg($("#scenePills"),"scene"); renderWithFlip();
+};
+
+/* 合作方 */
+$("#clientList").innerHTML = CFG.clients.map(c =>
+  `<li><a class="client" href="${c.url}" target="_blank" rel="noopener">
+    <span class="ico" data-squircle style="--r:7px"><svg viewBox="0 0 26 26" width="22" height="22" aria-hidden="true"><rect x="2" y="2" width="22" height="22" rx="7" fill="var(--accent)"/><path d="M8 17 13 8l5 9" stroke="var(--bg)" stroke-width="2" fill="none" stroke-linecap="round"/></svg></span>
+    <span class="txt"><b>${c.name}</b>：${c.rest}</span><span class="arw">↗</span></a></li>`).join("");
+$("#clientCount").textContent = CFG.clients.length;
+$("#mailto").href = `mailto:${CFG.contact}?subject=${encodeURIComponent("作品咨询")}`;
+document.getElementById("whoami").textContent = CFG.person;
+document.getElementById("whoami2").textContent = CFG.person;
+
+/* 主题（有 View Transitions 就用圆形扩散） */
+const themeBtns = document.querySelectorAll("[data-set-theme]");
+function applyTheme(t){
+  document.documentElement.classList.toggle("dark", t === "dark");
+  localStorage.setItem("theme", t);
+  themeBtns.forEach(b => b.setAttribute("aria-pressed", String(b.dataset.setTheme === t)));
+  const act = document.querySelector(`[data-set-theme="${t}"]`);
+  $("#themeInd").style.transform = `translateX(${act.offsetLeft - 3}px)`;
+}
+function setTheme(t, fromBtn){
+  const cur = document.documentElement.classList.contains("dark") ? "dark" : "light";
+  if (cur === t || reduced){ applyTheme(t); return; }
+  if (!document.startViewTransition || !fromBtn){ applyTheme(t); return; }
+  const r = fromBtn.getBoundingClientRect();
+  const x = r.left + r.width/2, y = r.top + r.height/2;
+  const rad = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+  const vt = document.startViewTransition(() => applyTheme(t));
+  vt.ready.then(() => document.documentElement.animate(
+    {clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${rad}px at ${x}px ${y}px)`]},
+    {duration:500, easing:"cubic-bezier(.645,.045,.355,1)", pseudoElement:"::view-transition-new(root)"}));
+}
+themeBtns.forEach(b => b.onclick = () => setTheme(b.dataset.setTheme, b));
+
+/* 时钟 */
+const tick = () => $("#clock").textContent = new Date().toLocaleTimeString("zh-CN",{hour12:false});
+tick(); setInterval(tick, 1000);
+
+/* 入场：原站的 useReveal(SLOT) —— 每个区块从 blur(20px)（牌叠 30px）+ 透明对焦出来，
+   弹簧 bounce:0 duration:.8s，延迟 = slot × 100ms。slot 是写死在 HTML 的 data-slot 上的，
+   所以顺序是设计过的（nav/牌叠 0 → 招呼 2 → 介绍 3 → 计数 4 → 合作方 4.75 → 控件 5 → 列表 6）。 */
+function revealSequence(){
+  const nodes = [...document.querySelectorAll(".reveal")];
+  let end = 0;
+  nodes.forEach((n, i) => {
+    const slot = n.dataset.slot !== undefined ? parseFloat(n.dataset.slot) : i;
+    const delay = slot * 100;
+    end = Math.max(end, delay + 900);
+    if (reduced){ n.style.opacity = 1; n.style.filter = "none"; return; }
+    n.animate([{opacity:0, filter:`blur(${n.classList.contains("deep") ? 30 : 20}px)`},
+               {opacity:1, filter:"blur(0px)"}], {duration:800, delay, easing:Q(true), fill:"both"});
+  });
+  setTimeout(() => nodes.forEach(n => { n.style.opacity = 1; n.style.filter = "none"; }), reduced ? 0 : end + 200);
+}
+
+/* ============================================================ INIT */
+function syncAllInds(){ moveInd($("#viewSeg")); moveInd($("#kindSeg")); moveInd($("#scenePills")); moveRailDot(); }
+buildSeg($("#kindSeg"), CFG.kinds, "kind");
+buildSeg($("#kindRail"), CFG.kinds, "kind");
+buildSeg($("#scenePills"), CFG.scenes, "scene");
+buildDeck();
+results.className = "results list";
+renderFiltered();
+observeRows();
+applyTheme(localStorage.getItem("theme") || (matchMedia("(prefers-color-scheme:dark)").matches ? "dark" : "light"));
+syncAllInds();
+revealSequence();
+if (document.fonts?.ready) document.fonts.ready.then(syncAllInds).catch(()=>{});
+addEventListener("load", syncAllInds);
+addEventListener("resize", syncAllInds);
+</script>
+</body>
+</html>

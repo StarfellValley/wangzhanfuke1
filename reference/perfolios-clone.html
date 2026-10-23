@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>shelf. — 精选个人网站目录（高保真交互复刻）</title>
+<meta name="description" content="对 perfolios.（directoryyy.com）的前端 UI 与动效复刻研究稿：扇形卡片阵列、blur 对焦入场、悬停聚焦列表、clip-path 擦除按钮。数据与素材为原创生成。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,300..700;1,400&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   TOKENS —— 数值取自对原站 :root / .dark 的实测提取
+   ============================================================ */
+:root{
+  color-scheme: light;
+  --bg:#fbfbfb; --fg:#707070; --strong:#000; --surface:#f2f2f2; --surface-2:#eee;
+  --faint:#a3a3a3; --disabled:#cfcfcf; --line:#e0e0e0; --highlight:#fff; --accent:#3232ff;
+  --raised:#fff;
+  --raised-shadow:0 .5px 0 #fff inset, 0 0 0 .5px #e0e0e0, 0 -.5px 0 #d0d0d0 inset, 0 2px 5px #00000010;
+  --lifted-shadow:0 0 0 .5px #00000014, 0 1px 0 #fff inset, 0 12px 32px -8px #00000030;
+  --ease-in-out-cubic:cubic-bezier(.645,.045,.355,1);
+  --ease-out-quint:cubic-bezier(.22,1,.36,1);
+}
+html.dark{
+  color-scheme: dark;
+  --bg:#0c0c0c; --fg:#8a8a8a; --strong:#f5f5f5; --surface:#161616; --surface-2:#1c1c1c;
+  --faint:#5c5c5c; --disabled:#333; --line:#1e1e1e; --highlight:#ffffff08; --accent:#8f8fff;
+  --raised:#232323;
+  --raised-shadow:0 .5px 0 #ffffff14 inset, 0 0 0 .5px #000, 0 2px 6px #00000080;
+  --lifted-shadow:0 0 0 .5px #ffffff14, 0 1px 0 #ffffff0d inset, 0 16px 40px -8px #000;
+}
+
+/* ============================================================ BASE */
+*{box-sizing:border-box;margin:0;padding:0}
+html{scrollbar-width:none;-ms-overflow-style:none}
+html::-webkit-scrollbar{display:none}
+body{
+  background:var(--bg); color:var(--fg);
+  font:16px/24px "Public Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+  transition:background .35s var(--ease-in-out-cubic), color .35s var(--ease-in-out-cubic);
+}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+input{font:inherit}
+ul{list-style:none}
+svg{display:block}
+.mono{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+/* squircle：支持 corner-shape 的浏览器用超椭圆，否则退回圆角 */
+[data-squircle]{border-radius:var(--r,12px)}
+@supports (corner-shape:superellipse(-1.4)){
+  [data-squircle]{corner-shape:superellipse(-1.4)}
+}
+
+/* ============================================================ LAYOUT */
+main{position:relative;min-height:100dvh;overflow-x:clip;padding:120px 0}
+.col{width:100%;max-width:540px;margin-inline:auto;padding-inline:16px;display:flex;flex-direction:column}
+@media(max-width:640px){ main{padding:96px 0} }
+
+/* 顶右角主题开关 */
+.theme-nav{position:fixed;top:16px;right:16px;z-index:60;display:flex;gap:2px;padding:3px;border-radius:999px;background:var(--surface)}
+.theme-nav button{position:relative;display:grid;place-items:center;width:32px;height:32px;border-radius:999px;color:var(--faint);transition:color .15s linear}
+.theme-nav button[aria-pressed="true"]{color:var(--strong)}
+.theme-nav .pill{position:absolute;top:3px;left:3px;width:32px;height:32px;border-radius:999px;background:var(--raised);box-shadow:var(--raised-shadow);transition:transform .3s var(--ease-out-quint)}
+
+/* ============================================================ HERO 扇形卡片 */
+.deck{position:relative;height:190px;width:100%;margin-inline:auto;--scale:1}
+@media(max-width:640px){ .deck{height:150px;--scale:.7} }
+.card{
+  position:absolute;top:50%;left:50%;display:block;width:210px;padding:5px;
+  background:var(--raised);border-radius:14px;box-shadow:var(--lifted-shadow);cursor:pointer;
+  transition:transform .5s var(--ease-out-quint);outline:none;
+  transform:translate(-50%,-50%) scale(var(--scale)) translateX(var(--x,0)) rotate(var(--rot,0deg));
+}
+.card:focus-visible{box-shadow:var(--lifted-shadow),0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.card .shot{width:100%;aspect-ratio:16/10;border-radius:10px;overflow:hidden;position:relative}
+.card .shot>*{position:absolute}
+
+/* ============================================================ 文案 */
+.hi{font-size:15px;line-height:22.5px;font-weight:500}
+h1{font-size:15px;line-height:22.5px;font-weight:500;color:var(--fg);text-wrap:pretty;max-width:48ch}
+h1 .nm{color:var(--strong)}
+h1 .mark{display:inline-block;height:26px;width:auto;margin-left:4px;margin-right:1.5px;vertical-align:-8px}
+.meta-row{margin-top:24px;font-size:15px;line-height:22.5px;text-wrap:pretty;display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}
+.count{color:var(--strong);font-weight:500}
+
+/* inline chip：clip-path 黑色擦除填充（原站签名动效） */
+.chip-inline{
+  position:relative;overflow:hidden;border-radius:8px;background:var(--surface-2);
+  padding:1px 8px 3px;font-size:13px;line-height:20px;color:var(--fg);outline:none;
+  transition:color .15s linear;
+}
+.chip-inline:hover{color:var(--strong)}
+.chip-inline .wipe{
+  position:absolute;inset:0;display:grid;place-items:center;padding-inline:8px;padding-bottom:1px;
+  background:var(--strong);color:var(--bg);
+  clip-path:inset(0 100% 0 0);
+  transition:clip-path .3s cubic-bezier(.65,0,.35,1);
+}
+.chip-inline:hover .wipe,.chip-inline:focus-visible .wipe{clip-path:inset(0 0 0 0)}
+.chip-inline:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+@media(prefers-reduced-motion:reduce){.chip-inline .wipe{transition:none}}
+
+/* 赞助商 */
+.sponsors{margin-top:8px;display:flex;flex-direction:column;gap:10px}
+.sponsors .head{display:flex;align-items:baseline;gap:8px;font-size:13px;color:var(--faint)}
+.sponsors .become{border-radius:6px;background:var(--surface-2);padding:1px 6px;font-size:12px;color:var(--fg);outline:none;transition:color .15s linear}
+.sponsors .become:hover{color:var(--strong)}
+.sponsors ul{display:flex;flex-direction:column;gap:8px}
+.sponsor{display:-webkit-box;display:flex;width:-moz-fit-content;width:fit-content;align-items:center;gap:10px;margin-inline:-4px;border-radius:8px;padding:2px 4px;outline:none}
+.sponsor:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.sponsor .ico{display:grid;place-items:center;width:32px;height:32px;overflow:hidden;border-radius:7px;padding:3px;background:var(--raised);box-shadow:var(--raised-shadow)}
+html.dark .sponsor .ico{filter:invert(1);box-shadow:0 0 0 .5px rgb(255 255 255/.2)}
+.sponsor .txt{font-size:13.5px;color:var(--fg);transition:color .15s linear}
+.sponsor .txt b{color:var(--strong);font-weight:500}
+.sponsor .arw{font-size:11px;color:var(--faint);transition:transform .2s var(--ease-out-quint),color .15s linear}
+.sponsor:hover .txt{color:var(--strong)}
+.sponsor:hover .arw{transform:translate(2px,-2px);color:var(--strong)}
+
+/* ============================================================ 控件条 */
+.bar{margin-top:40px;display:flex;flex-direction:column;gap:8px}
+.row1{display:flex;gap:8px}
+.search{position:relative;flex:1 1}
+.search .glass{position:absolute;top:50%;left:12px;transform:translateY(-50%);width:16px;height:16px;color:var(--faint);pointer-events:none}
+.search input{
+  height:36px;width:100%;padding-inline:36px;border-radius:12px;background:var(--surface);
+  font-size:14px;font-weight:500;color:var(--strong);outline:none;border:0;
+  transition:box-shadow .15s cubic-bezier(.4,0,.2,1);
+}
+.search input::placeholder{color:var(--faint)}
+.search input:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.search input::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none}
+.search kbd{
+  position:absolute;top:50%;right:8px;transform:translateY(-50%);display:grid;place-items:center;
+  width:20px;height:20px;border-radius:6px;background:var(--raised);box-shadow:var(--raised-shadow);
+  font-family:"Geist Mono",monospace;font-size:11px;color:var(--faint);pointer-events:none;
+}
+@media(max-width:640px){.search kbd{display:none}}
+
+/* 分段控件（滑块指示器） */
+.seg{position:relative;display:flex;gap:2px;padding:3px;border-radius:12px;background:var(--surface)}
+.seg .ind{position:absolute;top:3px;left:3px;height:30px;border-radius:9px;background:var(--raised);box-shadow:var(--raised-shadow);transition:transform .3s var(--ease-out-quint),width .3s var(--ease-out-quint)}
+.seg button{position:relative;display:grid;place-items:center;width:30px;height:30px;border-radius:9px;color:var(--faint);outline:none;transition:color .15s linear}
+.seg.icon button[aria-pressed="true"]{color:var(--strong)}
+.seg button:hover{color:var(--strong)}
+.seg button:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.seg.text{width:100%;border-radius:12px}
+.seg.text button{flex:1 1;height:30px;place-items:center;border-radius:9px;font-size:13px;font-weight:500;color:var(--faint)}
+.seg.text button[aria-pressed="true"]{color:var(--strong)}
+.seg.text .ind{height:30px}
+
+/* 风格 pill 行 */
+.pills{display:flex;flex-wrap:wrap;gap:2px;padding:3px;border-radius:12px;background:var(--surface);position:relative}
+.pills .ind{position:absolute;top:3px;left:3px;height:30px;border-radius:9px;background:var(--raised);box-shadow:var(--raised-shadow);transition:transform .3s var(--ease-out-quint),width .3s var(--ease-out-quint)}
+.pill{position:relative;display:flex;flex:0 0 auto;align-items:center;justify-content:center;height:30px;padding-inline:12px;border-radius:9px;font-size:13px;font-weight:500;color:var(--faint);outline:none;transition:color .15s linear}
+.pill:hover{color:var(--strong)}
+.pill[aria-pressed="true"]{color:var(--strong)}
+.pill:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.pill[data-tip]:hover::after{
+  content:attr(data-tip);position:absolute;left:50%;bottom:calc(100% + 10px);transform:translateX(-50%);
+  width:max-content;max-width:230px;padding:7px 9px;border-radius:8px;background:var(--raised);
+  box-shadow:var(--lifted-shadow);color:var(--fg);font-size:12px;font-weight:400;line-height:1.45;z-index:50;pointer-events:none;
+}
+
+/* ============================================================ 列表 */
+.list{display:flex;flex-direction:column;width:100%;margin-top:40px;position:relative}
+.row{
+  display:flex;align-items:baseline;gap:12px;border-radius:12px;padding:8px;outline:none;
+  font-size:15px;font-weight:500;line-height:22.5px;
+  transition:opacity .2s cubic-bezier(.4,0,.2,1);
+}
+.row:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.row .body{min-width:0;flex:1 1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .nm{color:var(--strong);transition:color .15s linear}
+.row .bl{margin-left:8px;color:var(--fg)}
+.row .dt{width:48px;flex:none;text-align:right;font-family:"Geist Mono",monospace;font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
+/* 签名交互：悬停任一行时其余降到 45% */
+.list:hover .row{opacity:.45}
+.list .row:hover,.list .row:focus-visible{opacity:1!important}
+.list .row:hover .nm{color:var(--accent)}
+
+/* 网格视图 */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;margin-top:40px}
+.grid .row{display:block;opacity:1!important;padding:0;border-radius:0}
+.grid .gshot{display:block;width:100%;aspect-ratio:16/10;border-radius:14px;overflow:hidden;background:var(--raised);padding:5px;box-shadow:var(--lifted-shadow);transition:transform .5s var(--ease-out-quint)}
+.grid .gshot>span{display:block;width:100%;height:100%;border-radius:10px;overflow:hidden;position:relative;transition:scale .3s var(--ease-out-quint)}
+.grid .row:hover .gshot>span{scale:1.03}
+.grid .gmeta{display:flex;align-items:baseline;gap:8px;padding:8px 2px 0}
+.grid .nm{font-size:13.5px;font-weight:500;color:var(--strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color .15s linear}
+.grid .row:hover .nm{color:var(--accent)}
+.grid .dt,.grid .bl{display:none}
+.grid .gdt{flex:none;margin-left:auto;font-family:"Geist Mono",monospace;font-size:11px;color:var(--faint)}
+.hidden{display:none!important}
+
+.empty{padding:56px 0;text-align:center;font-size:14px;color:var(--faint)}
+.empty button{margin-top:12px;border-radius:999px;background:var(--surface);padding:6px 14px;font-size:13px;font-weight:500;color:var(--strong)}
+
+/* Surprise me（含 sprout-wave 关键帧，取自原站） */
+.tail{margin-top:40px;display:flex;justify-content:center}
+.surprise{position:relative;display:flex;align-items:center;height:40px;padding-inline:16px;border-radius:999px;font-size:14px;font-weight:500;color:var(--strong);outline:none}
+.surprise .ghost{visibility:hidden}
+.surprise .surface{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:7px;
+  border-radius:999px;background:var(--raised);box-shadow:var(--raised-shadow);
+  transition:transform .35s var(--ease-out-quint),box-shadow .2s linear;
+}
+.surprise:hover .surface{transform:scale(1.04)}
+.surprise:active .surface{transform:scale(.97)}
+.surprise:focus-visible .surface{box-shadow:var(--raised-shadow),0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.surprise .sprout{display:inline-block;transform-origin:20% 90%}
+.surprise.waving .sprout{animation:sprout-wave .9s var(--ease-in-out-cubic)}
+@keyframes sprout-wave{
+  16%{color:#f3eebc;filter:blur(2px)}
+  34%{color:#dfe46a;filter:blur(1px)}
+  54%{color:#9fcb52;filter:blur(.3px)}
+  76%{color:#3f8c3c}
+}
+
+/* 页脚 */
+footer{margin-top:40px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;color:var(--faint)}
+footer a{color:var(--fg);transition:color .15s linear}
+footer a:hover{color:var(--strong);text-decoration:underline;text-decoration-color:var(--strong)}
+footer .clock{font-family:"Geist Mono",monospace;font-variant-numeric:tabular-nums}
+
+/* ============================================================ 入场：blur 对焦 */
+.reveal{opacity:0;filter:blur(20px);transition:opacity .8s var(--ease-in-out-cubic),filter .8s var(--ease-in-out-cubic)}
+.reveal.deep{filter:blur(30px)}
+.reveal.in{opacity:1;filter:blur(0)}
+@media(prefers-reduced-motion:reduce){
+  .reveal{opacity:1;filter:none;transition:none}
+  .card,.ind,.pill-ind,.surprise .surface{transition:none!important}
+}
+
+/* ============================================================ 弹窗 */
+dialog{border:0;padding:0;background:transparent;max-width:460px;width:calc(100% - 32px);color:var(--fg)}
+dialog::backdrop{background:color-mix(in srgb,var(--bg) 60%,#000 40%);backdrop-filter:blur(6px)}
+.dlg{background:var(--raised);border-radius:18px;box-shadow:var(--lifted-shadow);padding:20px;border-radius:18px}
+.dlg h2{font-size:15px;font-weight:500;color:var(--strong)}
+.dlg p.sub{margin-top:6px;font-size:13px;color:var(--fg)}
+.frm{margin-top:16px;display:grid;gap:10px}
+.fld{display:grid;gap:5px}
+.fld label{font-size:12px;color:var(--faint)}
+.fld input,.fld select{
+  width:100%;padding:8px 12px;border:0;border-radius:12px;background:var(--surface);color:var(--strong);
+  font-size:14px;font-weight:500;outline:none;transition:box-shadow .15s cubic-bezier(.4,0,.2,1);
+}
+.fld input:focus-visible,.fld select:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.dlg .acts{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
+.btn-flat{border-radius:999px;background:var(--surface);padding:7px 14px;font-size:13.5px;font-weight:500;color:var(--strong);outline:none;transition:background .15s linear}
+.btn-flat:hover{background:var(--surface-2)}
+.btn-raise{position:relative;border-radius:999px;background:var(--raised);box-shadow:var(--raised-shadow);padding:7px 14px;font-size:13.5px;font-weight:500;color:var(--strong)}
+.dlg .tip{font-size:11.5px;color:var(--faint);line-height:1.5}
+</style>
+</head>
+<body>
+
+<nav class="theme-nav" aria-label="Theme">
+  <span class="ind pill" id="themeInd"></span>
+  <button data-set-theme="light" aria-label="Light theme" aria-pressed="true">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.4M12 19.1v2.4M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2.5 12h2.4M19.1 12h2.4M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7"/></svg>
+  </button>
+  <button data-set-theme="dark" aria-label="Dark theme" aria-pressed="false">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.47 7 7 0 1 0 9.473 9.47Z"/></svg>
+  </button>
+</nav>
+
+<main>
+  <div class="col">
+
+    <!-- HERO：扇形卡片阵列 -->
+    <div class="deck reveal deep" id="deck" aria-hidden="true"></div>
+
+    <p class="hi reveal" style="margin-top:22px">嗨，</p>
+    <h1 class="reveal">这是一个
+      <svg class="mark" viewBox="0 0 118 34" role="img" aria-label="shelf 标志">
+        <circle cx="17" cy="17" r="14" fill="var(--strong)"/>
+        <path d="M11 12.5h12M11 17h12M11 21.5h8" stroke="var(--bg)" stroke-width="2.4" stroke-linecap="round"/>
+        <circle cx="38" cy="17" r="3.4" fill="var(--accent)"/>
+      </svg><span class="nm">层架</span>，一个人工精选的个人网站目录，收的是我真正会反复打开的那些。</h1>
+    <p class="meta-row reveal">
+      <span><span class="count mono" id="countHero">0</span> 个收录，还在加。看到该进来的？</span>
+      <button class="chip-inline" id="openDlg" aria-haspopup="dialog" aria-expanded="false">提交<span class="wipe" aria-hidden="true">提交</span></button>
+    </p>
+
+    <!-- 赞助商 -->
+    <div class="sponsors reveal">
+      <p class="head">Sponsors<a class="become" id="becomeOne" href="#">成为赞助</a></p>
+      <ul id="sponsorList"></ul>
+    </div>
+
+    <!-- 控件 -->
+    <div class="bar">
+      <div class="row1">
+        <label class="search">
+          <span class="sr">搜索收录</span>
+          <svg class="glass" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="m10.5 10.5 3 3"/></svg>
+          <input type="search" id="q" placeholder="搜索收录" autocomplete="off">
+          <kbd>/</kbd>
+        </label>
+        <div class="seg icon" id="viewSeg" role="group" aria-label="视图">
+          <span class="ind"></span>
+          <button data-view="list" aria-label="List view" aria-pressed="true">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><rect x="2" y="3" width="12" height="1.75" rx=".875"/><rect x="2" y="7.125" width="12" height="1.75" rx=".875"/><rect x="2" y="11.25" width="12" height="1.75" rx=".875"/></svg>
+          </button>
+          <button data-view="grid" aria-label="Grid view" aria-pressed="false">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><rect x="2" y="2" width="5.25" height="5.25" rx="1.5"/><rect x="8.75" y="2" width="5.25" height="5.25" rx="1.5"/><rect x="2" y="8.75" width="5.25" height="5.25" rx="1.5"/><rect x="8.75" y="8.75" width="5.25" height="5.25" rx="1.5"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="seg text" id="typeSeg" role="group" aria-label="类型">
+        <span class="ind"></span>
+      </div>
+      <div class="pills" id="stylePills" role="group" aria-label="风格">
+        <span class="ind"></span>
+      </div>
+    </div>
+
+    <!-- 列表 -->
+    <ul class="list" id="results"></ul>
+    <div class="grid hidden" id="resultsGrid"></div>
+    <div class="empty hidden" id="empty">没有匹配的结果。<br><button id="clearAll">清空筛选</button></div>
+
+    <div class="tail">
+      <button class="surprise" id="surprise">
+        <span class="ghost">随机看看</span>
+        <span class="surface"><span class="sprout">🌱</span>随机看看</span>
+      </button>
+    </div>
+
+    <footer>
+      <span>由 <a href="#" id="byline">你</a> 人工精选</span>
+      <span class="clock" id="clock">--:--:--</span>
+    </footer>
+  </div>
+</main>
+
+<dialog id="dlg">
+  <div class="dlg">
+    <h2>提交收录</h2>
+    <p class="sub">说明它是什么、给谁用。三个工作日内回复。</p>
+    <form class="frm" id="subForm">
+      <div class="fld"><label for="i-name">名称</label><input id="i-name" required placeholder="例如 阿岛的工作间"></div>
+      <div class="fld"><label for="i-url">链接</label><input id="i-url" type="url" required placeholder="https://"></div>
+      <div class="fld"><label for="i-blurb">一句话简介</label><input id="i-blurb" required maxlength="48" placeholder="给谁解决什么"></div>
+      <div class="fld"><label for="i-type">类型</label><select id="i-type"></select></div>
+      <div class="fld"><label for="i-style">风格</label><select id="i-style"></select></div>
+      <p class="tip">提交即表示你拥有该站点权利，或获得授权。收录不保证长期保留，失效条目会被移除。</p>
+      <div class="acts">
+        <button type="button" class="btn-flat" id="dlgCancel">取消</button>
+        <button type="submit" class="btn-raise">生成提交邮件</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<script>
+/* ============================================================
+   配置 —— 站名/邮箱/分类只改这里
+   ============================================================ */
+const CFG = {
+  contact: "hello@example.com",
+  ref: "?utm_source=shelf&utm_medium=referral",
+  types: [
+    {k:"all", n:"全部"}, {k:"personal", n:"个人", tip:"设计师与设计工程师的作品集。"},
+    {k:"studio", n:"工作室", tip:"工作室与代理公司的站点。"}, {k:"dev", n:"开发者", tip:"软件工程师的个人站。"}
+  ],
+  styles: [
+    {k:"all", n:"全部"},
+    {k:"minimal", n:"极简", tip:"只有文字与图标。"},
+    {k:"thoughtful", n:"考究", tip:"有斟酌过的悬停与交互细节，值得靠近看。"},
+    {k:"playful", n:"趣味", tip:"插画、物件与异想天开。"},
+    {k:"creative", n:"创意", tip:"美术指导过、实验性的，跟别的都不一样。"},
+    {k:"showcase", n:"作品墙", tip:"作品前置：项目网格与案例研究。"}
+  ],
+  sponsors: [ {name:"你的产品", rest:"一句话卖点", url:"https://example.com"} ]
+};
+
+/* ============================================================
+   数据 —— 全部为本地生成，缩略图用 CSS 画，不引用任何第三方截图
+   ============================================================ */
+const NAMES = ["阿岛","Nyan","小满","Rei","青子","Marlo","渡边","Suri","洛基","Ivo","橘子","Kenji","雾岛","Pia","周叙","Noa","半夏","Tobi","白鹭","Lena","拾叁","Yuri","南枝","Odin"];
+const BLURBS = ["在设计工作室做界面，业余拍胶片。","前端工程师，写渲染和动效。","产品设计师，在柏林做工具软件。","会写代码的插画师，做互动绘本。","独立开发者，只做自己要用的小工具。","做品牌也做网站，喜欢留白。","交互设计，研究无障碍和排版。","从建筑师转行，现在做空间可视化。","做音乐视觉，舞台投影和专辑页面。","写技术文章，也写散文。","UI 工程，专注组件系统与 Design Token。","做游戏工具链，业余开发像素游戏。","产品经理转设计，关注信息密度。","摄影出身，网站只做图和时间线。","做 AI 产品的设计与原型。","动画师，网站是作品合集加草稿。","全栈工程师，偏爱极简的技术栈。","平面设计师，把网站当杂志做。","做数据可视化，图表控。","内容设计，写文档也写脚本。","独立工作室主理，接品牌与网站。","学设计的学生，记录课程作业。","做开源项目维护，网站是文档加博客。","动效设计，喜欢缓动曲线胜过一切。"];
+const KIND = [["personal","minimal"],["dev","thoughtful"],["personal","showcase"],["studio","creative"],["dev","minimal"],["personal","playful"],["studio","minimal"],["dev","creative"],["personal","thoughtful"],["studio","showcase"],["dev","playful"],["personal","creative"]];
+
+const DATA = NAMES.map((n,i) => {
+  const [t,s] = KIND[i % KIND.length];
+  const d = new Date(2026,8,28 - Math.floor(i*1.6));
+  return { name:n, blurb:BLURBS[i % BLURBS.length], type:t, style:s, hue:(i*37)%360, v:i%4,
+    slug:"s"+i, url:"https://example.com/"+encodeURIComponent(n),
+    date:d.toLocaleDateString("en-US",{month:"short",day:"2-digit"}), iso:d.toISOString().slice(0,10) };
+});
+const bySlug = Object.fromEntries(DATA.map(d=>[d.slug,d]));
+const label = (arr,k) => (arr.find(x=>x.k===k)||{}).n || k;
+
+/* ============================================================
+   缩略图：纯 CSS 画的假网页截图（4 种版式）
+   ============================================================ */
+function shotHTML(d){
+  const h = d.hue, h2 = (h+40)%360;
+  const bg = `hsl(${h} 8% 92%)`, ink = `hsl(${h} 28% 22%)`, pop = `hsl(${h2} 68% 52%)`;
+  const V = [
+    /* 0 大标题 + 双栏 */
+    `<span style="background:${bg}"></span>
+     <span style="left:8%;top:14%;width:44%;height:11%;background:${ink};border-radius:2px"></span>
+     <span style="left:8%;top:29%;width:30%;height:6%;background:${ink};opacity:.45;border-radius:2px"></span>
+     <span style="left:8%;top:46%;width:38%;height:34%;background:${pop};border-radius:3px"></span>
+     <span style="left:52%;top:46%;width:40%;height:34%;background:${ink};opacity:.2;border-radius:3px"></span>`,
+    /* 1 全幅图 + 底部文字 */
+    `<span style="background:${bg}"></span>
+     <span style="left:6%;top:8%;width:88%;height:54%;background:${pop};border-radius:3px"></span>
+     <span style="left:6%;top:68%;width:52%;height:9%;background:${ink};border-radius:2px"></span>
+     <span style="left:6%;top:81%;width:34%;height:6%;background:${ink};opacity:.4;border-radius:2px"></span>`,
+    /* 2 作品网格 */
+    `<span style="background:${bg}"></span>
+     <span style="left:6%;top:10%;width:26%;height:5%;background:${ink};border-radius:2px"></span>
+     <span style="left:6%;top:22%;width:42%;height:32%;background:${ink};opacity:.22;border-radius:3px"></span>
+     <span style="left:52%;top:22%;width:42%;height:32%;background:${pop};border-radius:3px"></span>
+     <span style="left:6%;top:58%;width:42%;height:32%;background:${pop};opacity:.7;border-radius:3px"></span>
+     <span style="left:52%;top:58%;width:42%;height:32%;background:${ink};opacity:.22;border-radius:3px"></span>`,
+    /* 3 长文排版 */
+    `<span style="background:${bg}"></span>
+     <span style="left:10%;top:12%;width:54%;height:8%;background:${ink};border-radius:2px"></span>
+     <span style="left:10%;top:28%;width:80%;height:3.5%;background:${ink};opacity:.32;border-radius:2px"></span>
+     <span style="left:10%;top:35%;width:74%;height:3.5%;background:${ink};opacity:.32;border-radius:2px"></span>
+     <span style="left:10%;top:42%;width:78%;height:3.5%;background:${ink};opacity:.32;border-radius:2px"></span>
+     <span style="left:10%;top:52%;width:80%;height:30%;background:${pop};opacity:.85;border-radius:3px"></span>`
+  ];
+  return `<span style="position:absolute;inset:0;background:${bg}"></span>${V[d.v]}`;
+}
+
+/* ============================================================
+   HERO 扇形卡片（位移/旋转/z 取自原站实测值）
+   ============================================================ */
+const FAN = [
+  {x:-150, rot:-9,  z:1},
+  {x:-75,  rot:-4.5,z:2},
+  {x:0,    rot:0,   z:3},
+  {x:75,   rot:4.5, z:2},
+  {x:150,  rot:9,   z:1}
+];
+let deckIdx = 0; // 中心卡片在 DATA 中的位置
+const deck = document.getElementById("deck");
+
+function buildDeck(){
+  deck.innerHTML = "";
+  const start = deckIdx - 2;
+  FAN.forEach((f,i) => {
+    const d = DATA[(start + i + DATA.length) % DATA.length];
+    const a = document.createElement("a");
+    a.className = "card"; a.href = d.url + CFG.ref; a.target = "_blank"; a.rel = "noreferrer";
+    a.setAttribute("data-squircle",""); a.style.setProperty("--r","14px");
+    a.setAttribute("aria-label", d.name);
+    a.style.setProperty("--x", f.x + "px");
+    a.style.setProperty("--rot", f.rot + "deg");
+    a.style.zIndex = f.z;
+    a.innerHTML = `<span class="shot" data-squircle style="--r:10px">${shotHTML(d)}</span>`;
+    a.addEventListener("click", e => {
+      if(i !== 2){ e.preventDefault(); advanceTo(i - 2); }        // 点侧边卡 → 转过来
+      else { a.blur(); }
+    });
+    a.addEventListener("mouseenter", () => { if(i!==2) a.style.setProperty("--x",(f.x*.55)+"px"); });
+    a.addEventListener("mouseleave", () => { a.style.setProperty("--x", f.x + "px"); });
+    deck.appendChild(a);
+  });
+}
+function advanceTo(off){
+  const cur = getComputedStyle(document.documentElement).getPropertyValue("--scale") || 1;
+  deck.querySelectorAll(".card").forEach((c,i)=>{ /* 让最右卡飞出，整叠左移 */
+    c.style.opacity = i === 4 ? "0" : "1";
+  });
+  setTimeout(()=>{ deckIdx = ((deckIdx + off + 2) % DATA.length + DATA.length) % DATA.length; buildDeck(); }, 260);
+}
+
+/* ============================================================
+   分段控件 / pill：滑块指示器
+   ============================================================ */
+const state = { q:"", type:"all", style:"all", view:"list" };
+
+function segInit(box, items, key){
+  items.forEach(it => {
+    const b = document.createElement("button");
+    b.textContent = it.n; b.dataset.k = it.k;
+    b.setAttribute("aria-pressed", String(state[key] === it.k));
+    if(it.tip) b.setAttribute("data-tip", it.tip);
+    b.className = box.classList.contains("pills") ? "pill" : "";
+    b.onclick = () => { state[key] = it.k; segSync(box,key); render(); };
+    box.appendChild(b);
+  });
+}
+function segSync(box, key){
+  box.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(state[key] === b.dataset.k)));
+  moveInd(box);
+}
+function moveInd(box){
+  const ind = box.querySelector(".ind"), act = box.querySelector('[aria-pressed="true"]');
+  if(!ind || !act) return;
+  ind.style.width = act.offsetWidth + "px";
+  ind.style.transform = `translateX(${act.offsetLeft - 3}px)`;
+}
+
+/* ============================================================
+   渲染：列表 + 网格
+   ============================================================ */
+const results = document.getElementById("results");
+const grid = document.getElementById("resultsGrid");
+const empty = document.getElementById("empty");
+
+function filtered(){
+  const q = state.q.trim().toLowerCase();
+  return DATA.filter(d => {
+    if(state.type !== "all" && d.type !== state.type) return false;
+    if(state.style !== "all" && d.style !== state.style) return false;
+    if(!q) return true;
+    return (d.name + " " + d.blurb + " " + label(CFG.types,d.type) + " " + label(CFG.styles,d.style)).toLowerCase().includes(q);
+  });
+}
+function render(){
+  const list = filtered();
+  results.innerHTML = ""; grid.innerHTML = "";
+  if(!list.length){ empty.classList.remove("hidden"); }
+  else {
+    empty.classList.add("hidden");
+    list.forEach(d => {
+      const li = document.createElement("li");
+      li.innerHTML = `<a class="row" href="${d.url}${CFG.ref}" target="_blank" rel="noreferrer" data-slug="${d.slug}">
+        <span class="body"><span class="nm">${d.name}</span><span class="bl">${d.blurb}</span></span>
+        <time class="dt" datetime="${d.iso}">${d.date}</time></a>`;
+      results.appendChild(li);
+
+      const cell = document.createElement("div");
+      cell.innerHTML = `<a class="row" href="${d.url}${CFG.ref}" target="_blank" rel="noreferrer">
+        <span class="gshot" data-squircle style="--r:14px"><span data-squircle style="--r:10px">${shotHTML(d)}</span></span>
+        <span class="gmeta"><span class="nm">${d.name}</span><span class="gdt mono">${d.date.slice(0,6)}</span></span></a>`;
+      grid.appendChild(cell.firstChild);
+    });
+  }
+  document.getElementById("countHero").textContent = DATA.length;
+}
+
+/* ============================================================
+   主题 / 时钟 / 交互绑定
+   ============================================================ */
+const themeBtns = document.querySelectorAll("[data-set-theme]");
+function setTheme(t, first){
+  document.documentElement.classList.toggle("dark", t === "dark");
+  localStorage.setItem("theme", t);
+  themeBtns.forEach(b => b.setAttribute("aria-pressed", String(b.dataset.setTheme === t)));
+  const ind = document.getElementById("themeInd");
+  const act = document.querySelector(`[data-set-theme="${t}"]`);
+  ind.style.transform = `translateX(${act.offsetLeft - 3}px)`;
+}
+themeBtns.forEach(b => b.onclick = () => setTheme(b.dataset.setTheme));
+
+document.getElementById("q").addEventListener("input", e => { state.q = e.target.value; render(); });
+document.querySelectorAll("#viewSeg [data-view]").forEach(b => b.onclick = () => {
+  state.view = b.dataset.view;
+  document.querySelectorAll("#viewSeg [data-view]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  moveInd(document.getElementById("viewSeg"));
+  results.classList.toggle("hidden", state.view !== "list");
+  grid.classList.toggle("hidden", state.view !== "grid");
+  results.className = state.view === "list" ? "list" : "list hidden";
+});
+
+document.getElementById("surprise").addEventListener("click", e => {
+  const pool = filtered().length ? filtered() : DATA;
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  const btn = e.currentTarget; btn.classList.add("waving");
+  setTimeout(() => { btn.classList.remove("waving"); window.open(pick.url + CFG.ref, "_blank", "noopener"); }, 620);
+});
+document.getElementById("clearAll").onclick = () => {
+  state.q = ""; state.type = "all"; state.style = "all"; document.getElementById("q").value = "";
+  segSync(document.getElementById("typeSeg"),"type"); segSync(document.getElementById("stylePills"),"style");
+  render();
+};
+document.addEventListener("keydown", e => {
+  if(e.key === "/" && document.activeElement !== document.getElementById("q")){ e.preventDefault(); document.getElementById("q").focus(); }
+  if(e.key === "Escape" && dlg.open) dlg.close();
+});
+
+/* 提交弹窗 */
+const dlg = document.getElementById("dlg"), openBtn = document.getElementById("openDlg");
+openBtn.onclick = () => {
+  document.getElementById("i-type").innerHTML = CFG.types.filter(t=>t.k!=="all").map(t=>`<option value="${t.k}">${t.n}</option>`).join("");
+  document.getElementById("i-style").innerHTML = CFG.styles.filter(s=>s.k!=="all").map(s=>`<option value="${s.k}">${s.n}</option>`).join("");
+  dlg.showModal(); openBtn.setAttribute("aria-expanded","true");
+};
+document.getElementById("dlgCancel").onclick = () => dlg.close();
+document.getElementById("subForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const g = id => document.getElementById(id).value;
+  const body = `名称：${g("i-name")}\n链接：${g("i-url")}\n简介：${g("i-blurb")}\n类型：${label(CFG.types,g("i-type"))}\n风格：${label(CFG.styles,g("i-style"))}`;
+  location.href = `mailto:${CFG.contact}?subject=${encodeURIComponent("收录申请 · "+g("i-name"))}&body=${encodeURIComponent(body)}`;
+  dlg.close();
+});
+
+/* 赞助商 */
+document.getElementById("sponsorList").innerHTML = CFG.sponsors.map(s =>
+  `<li><a class="sponsor" href="${s.url}" target="_blank" rel="noopener sponsored">
+    <span class="ico" data-squircle style="--r:7px"><svg viewBox="0 0 26 26" width="22" height="22" aria-hidden="true"><rect x="2" y="2" width="22" height="22" rx="6" fill="var(--accent)"/><path d="M9 16.5 12.5 9l3.5 7.5" stroke="var(--bg)" stroke-width="2" fill="none" stroke-linecap="round"/></svg></span>
+    <span class="txt"><b>${s.name}</b>：${s.rest}</span><span class="arw">↗</span></a></li>`).join("");
+document.getElementById("becomeOne").href = `mailto:${CFG.contact}?subject=${encodeURIComponent("赞助咨询")}`;
+document.getElementById("byline").href = `mailto:${CFG.contact}`;
+
+/* 时钟 */
+const tick = () => document.getElementById("clock").textContent = new Date().toLocaleTimeString("zh-CN",{hour12:false});
+tick(); setInterval(tick, 1000);
+
+/* 逐级 blur 对焦入场 */
+function revealSequence(){
+  const nodes = [...document.querySelectorAll(".reveal")];
+  nodes.forEach((n,i) => setTimeout(() => n.classList.add("in"), 80 + i * 130));
+  // 保险：后台标签页会节流定时器，1.6s 后强制显示，绝不允许首屏停在 opacity:0
+  setTimeout(() => nodes.forEach(n => n.classList.add("in")), 1600);
+}
+function syncAll(){
+  moveInd(document.getElementById("viewSeg"));
+  moveInd(document.getElementById("typeSeg"));
+  moveInd(document.getElementById("stylePills"));
+}
+
+/* ============================================================ INIT
+   不依赖 requestAnimationFrame（隐藏标签页不触发），改为立即执行 + 字体就绪后重算 */
+segInit(document.getElementById("typeSeg"), CFG.types, "type");
+segInit(document.getElementById("stylePills"), CFG.styles, "style");
+buildDeck();
+render();
+document.getElementById("countHero").textContent = DATA.length;
+setTheme(localStorage.getItem("theme") || (matchMedia("(prefers-color-scheme:dark)").matches ? "dark" : "light"), true);
+syncAll();
+revealSequence();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(syncAll).catch(()=>{});
+addEventListener("load", syncAll);
+addEventListener("resize", () => { syncAll(); setTheme(localStorage.getItem("theme") || "light", true); });
+</script>
+</body>
+</html>
